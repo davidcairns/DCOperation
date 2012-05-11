@@ -19,7 +19,7 @@
 - (void)startExecuting;
 @end
 
-NSString *DCResponseErrorKey = @"DCResponseErrorKey";
+NSString *DCOperationErrorDomain = @"DCOperationErrorDomain";
 
 @implementation DCOperation
 #if TARGET_OS_IPHONE
@@ -28,6 +28,7 @@ NSString *DCResponseErrorKey = @"DCResponseErrorKey";
 @synthesize timeoutInterval = _timeoutInterval;
 @synthesize needsRunLoop = _needsRunLoop;
 @synthesize responseDictionary = _responseDictionary;
+@synthesize error = _error;
 @synthesize synchronousExecutionSemaphore = _synchronousExecutionSemaphore;
 
 - (id)init {
@@ -71,11 +72,7 @@ NSString *DCResponseErrorKey = @"DCResponseErrorKey";
 		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, self.timeoutInterval * NSEC_PER_SEC), dispatch_get_main_queue(), ^(void){
 			if(!self.isFinished) {
 				// Post a response that the operation timed out.
-				[self.responseDictionary setValue:[NSDictionary dictionaryWithObjectsAndKeys:
-												   @"OPERATION_TIMEOUT", @"type", 
-												   @"Request timed out", @"msg", 
-												   nil] 
-										   forKey:DCResponseErrorKey];
+				self.error = [NSError errorWithDomain:DCOperationErrorDomain code:DCOperationErrorCodeTimeout userInfo:nil];
 				
 				// ... And clean up.
 				[self finish];
@@ -83,17 +80,14 @@ NSString *DCResponseErrorKey = @"DCResponseErrorKey";
 		});
 	}
 	
-#if TARGET_OS_IPHONE
-//	// Tell the application that we're about to start an operation that should still execute in the background.
-//	__block DCOperation *blockSelf = self;
-//	self.backgroundTaskId = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^ {
-//		[blockSelf.responseDictionary setValue:[NSDictionary dictionaryWithObjectsAndKeys:
-//										   @"BACKGROUND_TIMEOUT", @"type", 
-//										   @"Execution timed out while running in the background.", @"msg", 
-//										   nil] 
-//								   forKey:DCResponseErrorKey];
-//		[blockSelf finish];
-//	}];
+#if TARGET_OS_IPHONE && 0
+	// Tell the application that we're about to start an operation that should still execute in the background.
+	__block DCOperation *blockSelf = self;
+	self.backgroundTaskId = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^ {
+		self.error = [NSError errorWithDomain:DCOperationErrorDomain code:DCOperationErrorCodeExpiration userInfo:nil];
+		self.error.localizedDescription = NSLocalizedString(@"Execution timed out while running in the background.", @"Execution timed out while running in the background.");
+		[blockSelf finish];
+	}];
 #endif
 	
 	[self startExecuting];
@@ -132,8 +126,11 @@ NSString *DCResponseErrorKey = @"DCResponseErrorKey";
 	[super cancel];
 	
 	// Post a response that the operation was cancelled.
-	[self.responseDictionary setValue:[NSDictionary dictionaryWithObject:@"OPERATION_CANCELLED" forKey:@"type"] 
-							   forKey:DCResponseErrorKey];
+	NSMutableDictionary *errorUserInfo = [NSMutableDictionary dictionary];
+	if(self.error) {
+		[errorUserInfo setObject:self.error forKey:NSUnderlyingErrorKey];
+	}
+	self.error = [NSError errorWithDomain:DCOperationErrorDomain code:DCOperationErrorCodeCanceled userInfo:errorUserInfo];
 	
 	// ... And clean up.
 	[self finish];

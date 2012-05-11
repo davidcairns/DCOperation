@@ -41,7 +41,7 @@
 #endif
 }
 
-- (DCNetworkOperation *)networkOperationForHTTPMethod:(NSString *)httpMethod apiMethod:(NSString *)apiMethod completionBlock:(dispatch_block_t)completionBlock {
+- (DCNetworkOperation *)networkOperationForHTTPMethod:(NSString *)httpMethod apiMethod:(NSString *)apiMethod {
 	DCNetworkOperation *op = DC_AUTORELEASE([[DCNetworkOperation alloc] init]);
 	op.HTTPMethod = httpMethod;
 	op.timeoutInterval = self.timeoutInterval;
@@ -49,7 +49,6 @@
 	op.authenticationUserName = self.authenticationUserName;
 	op.authenticationPassword = self.authenticationPassword;
 	op.responseProcessingBlock = self.responseProcessingBlock;
-	op.completionBlock = completionBlock;
 	
 	op.urlString = [NSString stringWithFormat:@"%@%@", self.baseURLString, apiMethod];
 	
@@ -60,10 +59,22 @@
 	
 	return op;
 }
-- (DCNetworkOperation *)scheduledNetworkOperationForHTTPMethod:(NSString *)httpMethod apiMethod:(NSString *)apiMethod completionBlock:(dispatch_block_t)completionBlock {
-	DCNetworkOperation *op = [self networkOperationForHTTPMethod:httpMethod apiMethod:apiMethod completionBlock:completionBlock];
-	[op start];
-	return op;
+
+- (DCFileDownloadOperation *)downloadOperationForFile:(NSString *)relativeFile destinationURL:(NSURL *)destinationURL {
+	NSString *urlString = [NSString stringWithFormat:@"%@%@", self.baseURLString, relativeFile];
+	DCFileDownloadOperation *downloadOperation = [[DCFileDownloadOperation alloc] initWithURLString:urlString destinationURL:destinationURL];
+	
+	// Add our custom fields (except timeout!).
+	downloadOperation.headerFields = self.headerFields;
+	downloadOperation.authenticationUserName = self.authenticationUserName;
+	downloadOperation.authenticationPassword = self.authenticationPassword;
+	
+	// Add each of our global parameters to this operation.
+	[self.parametersToValues enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
+		[downloadOperation setRequestValue:obj forParameter:key];
+	}];
+	
+	return downloadOperation;
 }
 
 

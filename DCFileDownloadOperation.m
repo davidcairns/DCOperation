@@ -8,24 +8,22 @@
 #import "DCFileDownloadOperation.h"
 #import "DCOperation+ARCSupport.h"
 
+NSString *DCFileDownloadErrorDomain = @"DCFileDownloadErrorDomain";
+
 @interface DCFileDownloadOperation()
 @property(nonatomic, copy)NSURL *destinationURL;
-@property(nonatomic, strong)id context;
 @end
 
 @implementation DCFileDownloadOperation
 @synthesize destinationURL = _destinationURL;
-@synthesize context = _context;
 @synthesize bytesDownloaded = _bytesDownloaded;
 
-- (id)initWithURLString:(NSString *)urlString destinationURL:(NSURL *)destinationURL context:(id)context {
+- (id)initWithURLString:(NSString *)urlString destinationURL:(NSURL *)destinationURL {
 	if((self = [super init])) {
 		NSAssert(urlString, @"Attempted to download from nil url.");
-		NSAssert(context, @"Attempted to download language pack for nil product identifier.");
 		
 		self.urlString = urlString;
 		self.destinationURL = destinationURL;
-		self.context = context;
 		
 		// This operation should not worry about timeout.
 		self.timeoutInterval = 0.0;
@@ -34,7 +32,6 @@
 }
 - (void)dealloc {
 	DC_RELEASE(_destinationURL);
-	DC_RELEASE(_context);
 	
 #if !defined(DC_USE_ARC)
 	[super dealloc];
@@ -56,23 +53,14 @@
 		
 		// Attempt to delete the file.
 		if(![fileManager removeItemAtPath:filePath error:&error]) {
-			[self.responseDictionary setValue:[NSDictionary dictionaryWithObjectsAndKeys:
-											   @"type", @"ARCHIVE_EXISTS", 
-											   @"msg", @"Could not overwrite pre-existing archive.", 
-											   @"error", error, 
-											   nil] 
-									   forKey:DCResponseErrorKey];
+			self.error = [NSError errorWithDomain:DCFileDownloadErrorDomain code:DCFileDownloadErrorCodeFileExists userInfo:nil];
 			return NO;
 		}
 	}
 	
 	// Create the file we're to write into.
 	if(![fileManager createFileAtPath:filePath contents:[NSData data] attributes:nil]) {
-		[self.responseDictionary setValue:[NSDictionary dictionaryWithObjectsAndKeys:
-										   @"type", @"CANNOT_CREATE_FILE", 
-										   @"msg", @"Could not create archive file.", 
-										   nil] 
-								   forKey:DCResponseErrorKey];
+		self.error = [NSError errorWithDomain:DCFileDownloadErrorDomain code:DCFileDownloadErrorCodeCreationFailure userInfo:nil];
 		return NO;
 	}
 	

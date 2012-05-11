@@ -8,12 +8,17 @@
 #import <Foundation/Foundation.h>
 #import "DCNetworkOperation.h"
 
+extern NSString *DCFileDownloadErrorDomain;
+enum {
+	DCFileDownloadErrorCodeFileExists = 1, 
+	DCFileDownloadErrorCodeCreationFailure, 
+};
+
 @interface DCFileDownloadOperation : DCNetworkOperation
 
-- (id)initWithURLString:(NSString *)urlString destinationURL:(NSURL *)destinationURL context:(id)context;
+- (id)initWithURLString:(NSString *)urlString destinationURL:(NSURL *)destinationURL;
 
 @property(nonatomic, copy, readonly)NSURL *destinationURL;
-@property(nonatomic, strong, readonly)id context;
 
 @property(nonatomic, assign)long long bytesDownloaded;
 

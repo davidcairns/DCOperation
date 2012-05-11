@@ -9,6 +9,22 @@
 #import "DCNetworkOperation+Helpers.h"
 #import "DCOperation+ARCSupport.h"
 
+NSString *DCNetworkOperationErrorDomain = @"DCNetworkOperationErrorDomain";
+
+@interface NSString (DCNetworkEncoding)
+
+@end
+@implementation NSString (DCNetworkEncoding)
+
+- (NSString *)DC_stringByEscapingForURLArgument {
+	// Encode all the reserved characters, per RFC 3986 (<http://www.ietf.org/rfc/rfc3986.txt>)
+	CFStringRef escaped = CFURLCreateStringByAddingPercentEscapes(kCFAllocatorDefault, (__bridge CFStringRef)self, NULL, (CFStringRef)@"!*'();:@&=+$,/?%#[]", kCFStringEncodingUTF8);
+	return DC_AUTORELEASE((__bridge_transfer NSString *)escaped);
+}
+
+@end
+
+
 @interface DCNetworkOperation ()
 @property(nonatomic, strong)NSURLConnection *urlConnection;
 @property(nonatomic, assign)long long expectedContentLength;
@@ -72,17 +88,19 @@
 	return [self.parametersToValues objectForKey:parameter];
 }
 - (void)setRequestValue:(NSString *)value forParameter:(NSString *)parameter {
-	// Clear out the raw request data, if it's been set.
+	// Force the request data to be rebuilt.
 	self.rawRequestData = nil;
 	
-	// Make sure our value has *some* content -- if it's null, make it an empty string!
-	value = value ? : @"";
-	
-	// Set the new value.
-	[self.parametersToValues setValue:value forKey:parameter];
-	
-	// Also make sure that this parameter is not marked a file.
+	// Make sure that this parameter is not marked a file.
 	[self.parametersRepresentingFiles removeObject:parameter];
+	
+	if(value) {
+		// Set the new value.
+		[self.parametersToValues setValue:value forKey:parameter];
+	}
+	else {
+		[self.parametersToValues removeObjectForKey:parameter];
+	}
 }
 - (void)setRequestFilename:(NSString *)filename forParameter:(NSString *)parameter {
 	// Clear out the raw request data, if it's been set.
@@ -103,30 +121,29 @@
 
 #pragma mark -
 - (NSURLRequest *)_urlRequest {
-#if 1
 	// Determine the real URL string to use.
 	NSMutableString *urlStringToUse = [NSMutableString stringWithString:self.urlString];
 	// If this is a GET request and we have parameters, we need to embed them in the URL.
 	if([self.HTTPMethod isEqualToString:@"GET"]) {
-		__block BOOL wroteArgumentOpener = NO;
+		__block BOOL isFirstArgument = YES;
 		[self.parametersToValues enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
-			if(!wroteArgumentOpener) {
+			if(isFirstArgument) {
 				// Make sure the argument section starts with a '?'.
 				[urlStringToUse appendString:@"?"];
-				wroteArgumentOpener = YES;
+				isFirstArgument = NO;
+			}
+			else {
+				[urlStringToUse appendString:@"&"];
 			}
 			
-			[urlStringToUse appendFormat:@"%@=%@", key, obj];
+			// If the object is a string, escape its contents.
+			id objToUse = [obj isKindOfClass:[NSString class]] ? [obj DC_stringByEscapingForURLArgument] : obj;
+			[urlStringToUse appendFormat:@"%@=%@", key, objToUse];
 		}];
 	}
-		
 	
 	// Set up our URL request.
 	NSURL *url = [NSURL URLWithString:urlStringToUse];
-#else
-	// Set up our URL request.
-	NSURL *url = [NSURL URLWithString:self.urlString];
-#endif
 	NSMutableURLRequest *request = DC_AUTORELEASE([[NSMutableURLRequest alloc] init]);
 	[request setURL:url];
 	[request setHTTPMethod:self.HTTPMethod];
@@ -154,11 +171,7 @@
 	// Check the preflight test to see if our request is valid.
 	NSURLRequest *request = [self _urlRequest];
 	if(![NSURLConnection canHandleRequest:request]) {
-		[self.responseDictionary setValue:[NSDictionary dictionaryWithObjectsAndKeys:
-										   @"BAD_URL_REQUEST", @"type", 
-										   @"Attempt a bad URL request", @"msg", 
-										   nil] 
-								   forKey:DCResponseErrorKey];
+		self.error = [NSError errorWithDomain:DCNetworkOperationErrorDomain code:DCNetworkOperationErrorCodeBadRequest userInfo:nil];
 		return NO;
 	}
 	
@@ -242,6 +255,16 @@
 }
 
 
+#pragma mark -
+- (float)progress {
+	if(-1 == self.expectedContentLength || 0 == self.expectedContentLength) {
+		return DCProgressIndeterminate;
+	}
+	
+	return self.responseData.length / self.expectedContentLength;
+}
+
+
 #pragma mark - NSURLConnectionDelegate
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response {
 	// Store the expected content size, so we can refer to it later.
@@ -256,18 +279,9 @@
 }
 - (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error {
 	// Our url connection failed!
-	// Attempt to deserialize the response data.
-	NSMutableDictionary *userInfo = [NSMutableDictionary dictionary];
 	
-	// Attach the error info dictionary.
-	[self.responseDictionary setValue:[NSDictionary dictionaryWithObjectsAndKeys:
-									   @"CONNECTION_FAILED", @"type", 
-									   @"Connection failed", @"msg", 
-									   error, @"error", 
-									   nil] 
-							   forKey:DCResponseErrorKey];
-	// Attach the user info.
-	[self.responseDictionary setValue:userInfo forKey:@"userInfo"];
+	NSDictionary *errorUserInfo = [NSDictionary dictionaryWithObject:error forKey:NSUnderlyingErrorKey];
+	self.error = [NSError errorWithDomain:DCNetworkOperationErrorDomain code:DCNetworkOperationErrorCodeConnectionFailed userInfo:errorUserInfo];
 	
 	// Clean up.
 	[self finish];
@@ -279,7 +293,6 @@
 
 
 #pragma mark - NSURLConnectionDelegate Authentication
-
 - (void)connection:(NSURLConnection *)connection willSendRequestForAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge {
 	if(challenge.previousFailureCount) {
 		NSLog(@"Authentication challenge was rejected!");

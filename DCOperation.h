@@ -7,8 +7,12 @@
 
 #import <Foundation/Foundation.h>
 
-// Response dictionary entries.
-extern NSString *DCResponseErrorKey;
+extern NSString *DCOperationErrorDomain;
+enum {
+	DCOperationErrorCodeTimeout = 1, 
+	DCOperationErrorCodeExpiration, 
+	DCOperationErrorCodeCanceled, 
+};
 
 typedef enum {
 	DCOperationErrorTimeout, 
@@ -24,6 +28,7 @@ typedef enum {
 @property(nonatomic, assign)BOOL needsRunLoop;
 
 @property(nonatomic, strong)NSMutableDictionary *responseDictionary;
+@property(nonatomic, strong)NSError *error;
 
 // Runs the operation synchronously. As opposed to -start.
 - (void)startAndWait;

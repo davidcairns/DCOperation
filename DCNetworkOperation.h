@@ -9,6 +9,14 @@
 #import "DCOperation.h"
 #import "NSString+DCNetworkOperationAdditions.h"
 
+extern NSString *DCNetworkOperationErrorDomain;
+enum {
+	DCNetworkOperationErrorCodeBadRequest = 1, 
+	DCNetworkOperationErrorCodeConnectionFailed, 
+};
+
+#define DCProgressIndeterminate -1.0
+
 @class DCNetworkOperation;
 typedef void (^DCResponseProcessingBlock)(DCNetworkOperation *networkOperation);
 
@@ -36,6 +44,8 @@ typedef void (^DCResponseProcessingBlock)(DCNetworkOperation *networkOperation);
 
 // This block is called every time the operation receives data.
 @property(nonatomic, copy)dispatch_block_t transferUpdateBlock;
+// Progress in [0.0, 1.0]. If the expected content length isn't yet known, returns DCProgressIndeterminate.
+@property(nonatomic, assign, readonly)float progress;
 
 // The block to be called by each operation when it needs to process its response data.
 // Generally, you'd interpret the response data as e.g. JSON and parse it in to the network
